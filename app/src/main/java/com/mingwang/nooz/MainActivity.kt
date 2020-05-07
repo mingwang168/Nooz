@@ -1,42 +1,68 @@
 package com.mingwang.nooz
 
+import android.content.Context
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import com.mingwang.nooz.network.ArticleResponse
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-import retrofit2.Retrofit
-import retrofit2.converter.moshi.MoshiConverterFactory
-import retrofit2.http.GET
-import retrofit2.http.Query
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.lifecycle.Observer
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
+import com.mingwang.nooz.network.Article
+import kotlinx.android.synthetic.main.activity_main.*
+import kotlinx.android.synthetic.main.item_article.view.*
+import org.koin.android.viewmodel.ext.android.viewModel
+
 
 class MainActivity : AppCompatActivity() {
-
-    // Moshi to help parse our JSON response into kotlin class objects
-    private val moshi = Moshi.Builder()
-        .add(KotlinJsonAdapterFactory())
-        .build()
-
-    // Retrofit as our HTTP Client to interact with the Api
-    private val retrofit: Retrofit? = Retrofit.Builder()
-        .addConverterFactory(MoshiConverterFactory.create(moshi))
-        .baseUrl("https://api.nytimes.com/svc/")
-        .build()
-
-    // Retrofit requires us to add an interface (see below)
-// within which we add method declarations to outline
-// the endpoints that we want to access
-    private var api: API = retrofit!!.create<API>(API::class.java)
+    private val articlesViewModel: ArticlesViewModel by viewModel()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        println(BuildConfig.API_KEY)
+        article_list.layoutManager = GridLayoutManager(this, 2)
+
+        articlesViewModel.loadPopularArticles()
+
+        articlesViewModel.articles.observe(this, Observer { articles ->
+            articles ?: return@Observer
+            article_list.adapter = ArticlesAdapter(articles, this) {
+                val intent = ArticleActivity.newIntent(it, this)
+                startActivity(intent)
+            }
+         })
+
+        swipe_refresh_articles_layout.setOnRefreshListener {
+            articlesViewModel.loadPopularArticles()
+            swipe_refresh_articles_layout.isRefreshing = false
+        }
     }
 }
 
-interface API {
-    @GET("mostpopular/v2/viewed/1.json")
-    suspend fun getPopularArticlesAsync(@Query("api-key") apiKey: String): ArticleResponse
+private class ArticlesAdapter(private val articles:List<Article>, val context:Context,val articleSelected: (Article) -> Unit):
+    RecyclerView.Adapter<ArticlesViewHolder>(){
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ArticlesViewHolder {
+
+       return ArticlesViewHolder(LayoutInflater.from(context).inflate(R.layout.item_article, parent, false))
+    }
+
+    override fun getItemCount(): Int {
+        return articles.count()
+    }
+
+    override fun onBindViewHolder(holder: ArticlesViewHolder, position: Int) {
+        val article = articles[position]
+        holder.itemView.item_title.text = article.title
+        article.media.firstOrNull()?.mediaMetadata?.firstOrNull()?.url.let {
+            Glide.with(context).load(it).into(holder.itemView.item_image)
+        }
+        holder.itemView.setOnClickListener {
+            articleSelected(article)
+        }
+    }
 }
+
+class ArticlesViewHolder(view: View): RecyclerView.ViewHolder(view)
